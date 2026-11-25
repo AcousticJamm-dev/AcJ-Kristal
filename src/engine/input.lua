@@ -80,6 +80,7 @@ Input.key_down_timer = {}
 
 Input.key_bindings = {}
 Input.gamepad_bindings = {}
+Input.current_gamepad_set = 1
 
 Input.stray_key_bindings = {}
 Input.stray_gamepad_bindings = {}
@@ -375,9 +376,8 @@ function Input.loadBinds()
         local found_rename = false
         local user_binds = JSON.decode(love.filesystem.read("keybinds.json"))
 
-        for k, v in pairs(user_binds) do
+        for k, v in pairs(user_binds.keyboard) do
             local key_bind = {}
-            local gamepad_bind = {}
 
             if k == "mod_rebind" then
                 Logging.warn("Found 'mod_rebind' keybind, converting to 'project_rebind'")
@@ -389,8 +389,6 @@ function Input.loadBinds()
                 local split = StringUtils.split(key, "+")
                 if #split > 1 then
                     table.insert(key_bind, split)
-                elseif StringUtils.startsWith(key, "gamepad:") then
-                    table.insert(gamepad_bind, key)
                 else
                     table.insert(key_bind, key)
                 end
@@ -401,6 +399,25 @@ function Input.loadBinds()
             else
                 Input.stray_key_bindings[k] = key_bind
             end
+        end
+
+        for k, v in pairs(user_binds.gamepad) do
+            local gamepad_bind = {}
+
+            if k == "mod_rebind" then
+                Logging.warn("Found 'mod_rebind' keybind, converting to 'project_rebind'")
+                k = "project_rebind"
+                found_rename = true
+            end
+
+            for _, key in ipairs(v) do
+                local split = StringUtils.split(key, "+")
+                if #split > 1 then
+                    table.insert(gamepad_bind, split)
+                else
+                    table.insert(gamepad_bind, key)
+                end
+            end
 
             if Input.gamepad_bindings[k] then
                 Input.gamepad_bindings[k] = gamepad_bind
@@ -408,6 +425,8 @@ function Input.loadBinds()
                 Input.stray_gamepad_bindings[k] = gamepad_bind
             end
         end
+        
+        Input.current_gamepad_set = gamepad_set
 
         if found_rename then
             Input.saveBinds()
@@ -437,22 +456,23 @@ function Input.orderedNumberToKey(number)
 end
 
 function Input.saveBinds()
-    local all_binds = {}
+    local key_bindings = {}
     for k, v in pairs(Input.key_bindings) do
-        all_binds[k] = TableUtils.copy(v)
+        key_bindings[k] = TableUtils.copy(v)
     end
     for k, v in pairs(Input.stray_key_bindings) do
-        all_binds[k] = TableUtils.merge(all_binds[k] or {}, v)
+        key_bindings[k] = TableUtils.merge(key_bindings[k] or {}, v)
     end
+    local gamepad_bindings = {}
     for k, v in pairs(Input.gamepad_bindings) do
-        all_binds[k] = TableUtils.merge(all_binds[k] or {}, v)
+        gamepad_bindings[k] = TableUtils.copy(v)
     end
     for k, v in pairs(Input.stray_gamepad_bindings) do
-        all_binds[k] = TableUtils.merge(all_binds[k] or {}, v)
+        gamepad_bindings[k] = TableUtils.merge(gamepad_bindings[k] or {}, v)
     end
 
-    local saved_binds = {}
-    for k, v in pairs(all_binds) do
+    local saved_key_binds = {}
+    for k, v in pairs(key_bindings) do
         local new_bind = {}
         for _, key in ipairs(v) do
             if type(key) == "table" then
@@ -461,9 +481,21 @@ function Input.saveBinds()
                 table.insert(new_bind, key)
             end
         end
-        saved_binds[k] = new_bind
+        saved_key_binds[k] = new_bind
     end
-    love.filesystem.write("keybinds.json", JSON.encode(saved_binds))
+    local saved_gamepad_binds = {}
+    for k, v in pairs(gamepad_bindings) do
+        local new_bind = {}
+        for _, key in ipairs(v) do
+            if type(key) == "table" then
+                table.insert(new_bind, table.concat(key, "+"))
+            else
+                table.insert(new_bind, key)
+            end
+        end
+        saved_gamepad_binds[k] = new_bind
+    end
+    love.filesystem.write("keybinds.json", JSON.encode({keyboard = saved_key_binds, gamepad = saved_gamepad_binds, gamepad_set = Input.current_gamepad_set}))
 end
 
 ---@param alias string
